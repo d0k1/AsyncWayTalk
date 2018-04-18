@@ -228,6 +228,13 @@ public enum DispatcherType {
                 <section>
                     <h1>Servlet filters</h1>
 <pre style="width:auto;"><code data-trim class="java">
+public class NocacheFilter implements Filter
+{
+    @Override
+    public void doFilter(ServletRequest request, final ServletResponse response,
+                         FilterChain chain) throws IOException, ServletException
+    {
+    
 </code></pre>
                 </section>
 

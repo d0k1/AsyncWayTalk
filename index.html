@@ -77,65 +77,158 @@
             <!-- Any section element inside of this container is displayed as a slide -->
             <div class="slides">
                 <section>
-                    <h1>Async<br/> servlets in production </h1>
+                    <h1>Async<br/> servlets<br/> 9 years later</h1>
                 </section>
                 
                 <section>
                     <h1>Sync is great!</h1>
-                    <p>
-                        Tomcat http threadpool: max 200 threads.
-                        Runtime tunnable
-                    </p>
+                    <ul>
+                        <li>Не требует настройки</li>
+                        <li>Потоков хватит всем</li>
+                        <li>Есть MBean для настройки</li>
+                    </ul>
                 </section>
 
                 <section>
                     <h1>Sync cons</h1>
                     <ul>
-                        <li>каждый поток это Xss байт нативной памяти</li>
-                        <li>Можно заблокровать все потоки бесконечным F5</li>
+                        <li>Простой способ сделать DoS</li>
+                        <li>Каждый поток - расход память</li>
                     </ul>
                 </section>
 
                 <section>
                     <h1>Sync Servlet</h1>
-                    <p>
-                        что происходит под внутри контейнера:
-                    </p>
+                    <img src="img/SyncServletFlow.png"/>
+                </section>
+
+                <section>
+                    <h1>Sync Servlet</h1>
+                    <img src="img/SyncServletFlaw.png"/>
                 </section>
 
                 <section>
                     <h1>Async Servlet</h1>
-                    <p>
-                        что происходит под внутри контейнера:
-                    </p>
+                    <img src="img/AsyncServletFlow.png"/>
                 </section>
     
                 <section>
                     <h1>Async in 5 minutes</h1>
-                    <p>Рецепт асинхронной обработки</p>
+<pre style="width:auto;"><code data-trim class="java">
+public class AsyncServlet extends HttpServlet {
+
+    public void serviceInt(HttpServletRequest req, HttpServletResponse resp){}
+
+    @Override
+    public void service(HttpServletRequest req, HttpServletResponse resp) {
+
+        // set container thread free
+        final AsyncContext context = request.startAsync();
+        
+        // process request in an App thread
+        executor.submit(()->{
+
+            try {
+                // call AsyncServlet to process
+                serviceInt(context.getRequest(), context.getResponse());
+            }
+            finally {
+                // close user request / response / etc
+                context.complete();
+            }
+        })
+    }
+}
+</code></pre>
                 </section>
                 
                 <section>
                     <h1>Configuration</h1>
                     <p>web.xml</p>
+<pre style="width:auto;"><code data-trim class="xml">
+<filter>
+    <filter-name>NocacheFilter</filter-name>
+    <filter-class>ru.naumen.core.server.NocacheFilter</filter-class>
+    
+    <async-supported>true</async-supported>
+
+</filter>
+
+<servlet>
+    <servlet-name>jwt-servlet</servlet-name>
+    <servlet-class>ru.naumen.sec.server.jwt.provider.JwtTokenServlet</servlet-class>
+
+    <async-supported>true</async-supported>
+    
+</servlet>
+
+</code></pre>
                 </section>
 
                 <section>
                     <h1>Configuration</h1>
                     <p>Annotations</p>
-                </section>
+<pre style="width:auto;"><code data-trim class="java">
+@WebServlet(urlPatterns = { "/async" }, asyncSupported=true)
+public class AsyncServlet extends HttpServlet {
+}
 
-                <section>
-                    <h1>Simple async request flow</h1>
+@WebFilter("/*", asyncSupported=true)
+public class MyFilter implements Filter {
+}
+</code></pre>
                 </section>
 
                 <section>
                     <h1>First strike</h1>
-                    <p>RequestDispatcher</p>
+<pre style="width:auto;"><code data-trim class="java">
+
+public class AsyncServlet extends HttpServlet {
+
+    public void serviceInt(HttpServletRequest req, HttpServletResponse resp) {
+
+        // What is request dispatcher
+        request.getRequestDispatcher("/accessDenied.jsp")
+                .forward(request, response);                
+    }
+
+    @Override
+    public void service(HttpServletRequest req, HttpServletResponse resp) {
+        final AsyncContext context = request.startAsync();
+        try {
+            serviceInt(context.getRequest(), context.getResponse());
+        }
+        finally {
+            context.complete();
+        }
+    }
+}
+</code></pre>
+                </section>
+
+                <section>
+                    <h1>RequestDispatcher</h1>
+<pre style="width:auto;"><code data-trim class="java">
+public interface RequestDispatcher {
+    public void forward(ServletRequest request, ServletResponse response);
+    public void include(ServletRequest request, ServletResponse response);
+}
+
+public enum DispatcherType {
+    REQUEST, FORWARD, INCLUDE, ASYNC, ERROR 
+}
+</code></pre>
                 </section>
             
                 <section>
+                    <h1>RequestDispatcher</h1>
+                    <img src="img/RequestDipatcher.png"/>
+                </section>
+
+                <section>
                     <h1>Servlet filters</h1>
+<pre style="width:auto;"><code data-trim class="java">
+</code></pre>
                 </section>
 
                 <section>

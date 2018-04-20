@@ -116,11 +116,9 @@
                     <h1>Async in 5 minutes</h1>
 <pre style="width:auto;"><code data-trim class="java">
 public class AsyncServlet extends HttpServlet {
-
-    public void serviceInt(HttpServletRequest req, HttpServletResponse resp){}
-
     @Override
     public void service(HttpServletRequest req, HttpServletResponse resp) {
+
 
         // set container thread free
         final AsyncContext context = request.startAsync();
@@ -136,6 +134,7 @@ public class AsyncServlet extends HttpServlet {
                 // close user request / response / etc
                 context.complete();
             }
+
         })
     }
 }
@@ -180,49 +179,72 @@ public class MyFilter implements Filter {
                 </section>
 
                 <section>
-                    <h1>First strike</h1>
+                    <h1>RequestDispatcher</h1>
 <pre style="width:auto;"><code data-trim class="java">
 
 public class AsyncServlet extends HttpServlet {
 
-    public void serviceInt(HttpServletRequest req, HttpServletResponse resp) {
-
-        // What is request dispatcher
-        request.getRequestDispatcher("/accessDenied.jsp")
-                .forward(request, response);                
-    }
-
     @Override
     public void service(HttpServletRequest req, HttpServletResponse resp) {
+
         final AsyncContext context = request.startAsync();
-        try {
-            serviceInt(context.getRequest(), context.getResponse());
-        }
-        finally {
-            context.complete();
-        }
+        executor.submit(()->{
+            try { 
+                
+                // WTF ?!?!
+
+                context.getRequest().getRequestDispatcher("/accessDenied.jsp")
+                    .forward(request, response);
+            }
+            
+            finally {
+                context.complete();
+            }
+        });
     }
 }
 </code></pre>
+                </section>
+                
+                <section>
+                    <h1>RequestDispatcher</h1>
+                    <img src="img/RequestDipatcher.png"/>
                 </section>
 
                 <section>
                     <h1>RequestDispatcher</h1>
 <pre style="width:auto;"><code data-trim class="java">
-public interface RequestDispatcher {
-    public void forward(ServletRequest request, ServletResponse response);
-    public void include(ServletRequest request, ServletResponse response);
-}
+public class AsyncServlet extends HttpServlet {
 
-public enum DispatcherType {
-    REQUEST, FORWARD, INCLUDE, ASYNC, ERROR 
+    @Override
+    public void service(HttpServletRequest req, HttpServletResponse resp) {
+        final AsyncContext context = request.startAsync();
+        
+        executor.submit(()->{
+            boolean forward = false;
+
+            try { 
+                
+                forward = true;
+
+                context.getRequest().getRequestDispatcher("/accessDenied.jsp")
+                    .forward(request, response);
+            }        
+            finally {
+
+                if(!forward)
+                    context.complete();
+
+            }
+        });
+    }
 }
 </code></pre>
                 </section>
-            
+                
                 <section>
-                    <h1>RequestDispatcher</h1>
-                    <img src="img/RequestDipatcher.png"/>
+                    <h1>Servlet filters. Sync</h1>
+                    <img src="img/SyncServletFilterFlow.png"/>
                 </section>
 
                 <section>
@@ -234,18 +256,110 @@ public class NocacheFilter implements Filter
     public void doFilter(ServletRequest request, final ServletResponse response,
                          FilterChain chain) throws IOException, ServletException
     {
+        // do pre processing
+        try {
+
+            // call handlers
+            chain.doFilter(request, response);
+
+        } finally {
+            // do post processing
+        }
+    }
+</code></pre>
+                </section>
+                
+                <section>
+                    <h1>Servlet filters. Async</h1>
+                    <img src="img/ASyncServletFilterFlow.png"/>
+<pre style="width:auto;"><code data-trim class="java">
+// from Spring Security with love!
+</code></pre>
+                    
+                </section>
+
+                <section>
+                    <h1>Servlet filters. Final</h1>
+<pre style="width:auto;"><code data-trim class="java">
+// somewhere in filter chain
+chain.doFilter(new WrappedRequest(request), 
+            new WrappedResponse(response));
+
+// async servlet
+public void service(HttpServletRequest req, HttpServletResponse resp) {
+    AsyncContext context = request.startAsync();
+
+    // at execution moment
+    // is context.getRequest() wrapped ? 
+    // is context.getRequest() equals to req ?
     
+    context.getRequest().getInputStream().available();
+    
+    context.complete();
+}
+
+// from JavaMelody with love!
 </code></pre>
                 </section>
 
                 <section>
-                    <h1>Request/Response wrappers</h1>
+                    <h1>Error handling</h1>
+<pre style="width:auto;"><code data-trim class="java">
+public class AsyncServlet extends HttpServlet {
+
+    @Override
+    public void service(HttpServletRequest req, HttpServletResponse resp) {
+        final AsyncContext context = request.startAsync();
+        executor.submit(()->{
+            try {
+
+                doSomeWorkAndGenerateException(); 
+
+            }        
+            finally {
+                context.complete();
+
+                // what user will get in case of error?
+            }
+        });
+    }
+}
+</code></pre>
+                </section>
+                
+                <section>
+                    <h1>Error handling</h1>
+<pre style="width:auto;"><code data-trim class="java">
+public void service(HttpServletRequest req, HttpServletResponse resp) {
+    
+    // if an error has occured during async processing
+    if(req.getAttribute(RequestDispatcher.ERROR_EXCEPTION)){
+        throw new ServletException();
+    }
+
+    // if everything is ok
+    final AsyncContext context = request.startAsync();
+    executor.submit(()->{
+        try {
+            doSomeWorkAndGenerateException(); 
+        }        
+        catch(Throwable tr) {
+            context.getRequest().setAttribute(
+                RequestDispatcher.ERROR_EXCEPTION, tr);
+            // send request back
+            context.dispatch();
+        }
+        // in case everything is ok
+        context.complete();
+    });
+}
+</code></pre>
                 </section>
 
                 <section>
-                    <h1>Error handling</h1>
+                    <img src="img/it_works.jpg"/>
                 </section>
-                
+
                 <section>
                     <h1>Tests are falling</h1>
                     <ul>
@@ -262,7 +376,7 @@ public class NocacheFilter implements Filter
                     <h1>Tomcat IOException</h1>
                     <ul>
                         <li>Broken channel</li>
-                        <li>Request is already committed</li>
+                        <li>Response is already committed</li>
                     </ul>
                 </section>
 

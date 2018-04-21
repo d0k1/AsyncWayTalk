@@ -142,6 +142,25 @@ public class AsyncServlet extends HttpServlet {
                 </section>
                 
                 <section>
+                    <h1>AsyncContext</h1>
+<pre style="width:auto;"><code data-trim class="java">
+public interface AsyncContext {
+
+    public ServletRequest getRequest();
+    public ServletResponse getResponse();
+
+    public void complete();
+
+    // what is dispatch??
+    public void dispatch();
+}
+</code></pre>
+                </section>
+                <section>
+                    <h1>What is dispatch</h1>
+                    <img src="img/WhatIsDispatch.png"/>
+                </section>
+                <section>
                     <h1>Configuration</h1>
                     <p>web.xml</p>
 <pre style="width:auto;"><code data-trim class="xml">
@@ -193,7 +212,7 @@ public class AsyncServlet extends HttpServlet {
                 
                 // WTF ?!?!
 
-                context.getRequest().getRequestDispatcher("/accessDenied.jsp")
+                context.getRequest().getRequestDispatcher("/denied.jsp")
                     .forward(request, response);
             }
             
@@ -224,11 +243,10 @@ public class AsyncServlet extends HttpServlet {
             boolean forward = false;
 
             try { 
-                
                 forward = true;
-
-                context.getRequest().getRequestDispatcher("/accessDenied.jsp")
-                    .forward(request, response);
+                
+                // no RequestDispatcher needed
+                context.dispatch("/denied.jsp");
             }        
             finally {
 
@@ -340,14 +358,14 @@ public void service(HttpServletRequest req, HttpServletResponse resp) {
     // if everything is ok
     final AsyncContext context = request.startAsync();
     executor.submit(()->{
-        try {
-            doSomeWorkAndGenerateException(); 
-        }        
+        // doSomeWorkAndGenerateException(); 
+        
         catch(Throwable tr) {
             context.getRequest().setAttribute(
                 RequestDispatcher.ERROR_EXCEPTION, tr);
             // send request back
             context.dispatch();
+            return;
         }
         // in case everything is ok
         context.complete();
@@ -363,106 +381,180 @@ public void service(HttpServletRequest req, HttpServletResponse resp) {
                 <section>
                     <h1>Tests are falling</h1>
                     <ul>
-                        <li>Tomcat перестает отвечать - тест не находит dom-element'а</li>
-                        <li>Tomcat продолжает отвечать - ответ не соответствует запросу</li>
+                        <li>Тест не находит dom-element'а</li>
+                        <li>Ответ не соответствует запросу</li>
                     </ul>
-                </section>
-
-                <section>
-                    <h1>Spring MVC Async</h1>
+                    <img src="img/falling.jpg"/>
                 </section>
 
                 <section>
                     <h1>Tomcat IOException</h1>
                     <ul>
-                        <li>Broken channel</li>
                         <li>Response is already committed</li>
+                        <li>Broken pipe</li>
                     </ul>
                 </section>
 
                 <section>
-                    <h1>Servlet basics</h1>
+                    <h1>Response commit</h1>
+<pre style="width:auto;"><code data-trim class="java">
+    public interface HttpServletResponse {
+        
+        public PrintWriter getWriter();
+
+        public ServletOutputStream getOutputStream();
+
+        public int getBufferSize();
+
+        public void resetBuffer();
+
+        public void flushBuffer();
+    }
+</code></pre>
                 </section>
                 
                 <section>
-                    <h1>Jetty to the rescue</h1>
+                    <h1>Another server</h1>
+                    <ul>
+                        <li>OpenLiberty</li>
+                        <li>WildFly</li>
+                        <li>Jetty</li>
+                    </ul>
                 </section>
 
                 <section>
-                    <h1>Request async attributes</h1>                
+                    <h1>Request attributes</h1>
+<pre style="width:auto;"><code data-trim class="java">
+public interface HttpServletRequest {
+    public String getRequestURI();
+    public String getContextPath();
+    public String getPathInfo();
+    public String getServletPath();
+    public String getQueryString();
+}
+
+public interface AsyncContext {
+
+/**
+* The name of the request attribute under which the original
+* .... is made available to the target of a
+* {@link #dispatch(String)} or {@link #dispatch(ServletContext,String)} 
+*/
+
+ static final String ASYNC_REQUEST_URI="javax.servlet.async.request_uri";
+ static final String ASYNC_CONTEXT_PATH="javax.servlet.async.context_path";
+ static final String ASYNC_PATH_INFO="javax.servlet.async.path_info";
+ static final String ASYNC_SERVLET_PATH="javax.servlet.async.servlet_path";
+ static final String ASYNC_QUERY_STRING="javax.servlet.async.query_string";
+}
+</code></pre>                                    
                 </section>
 
                 <section>
-                    <h1>EofException / IOException </h1>
+                    <h1>Jetty works!</h1>
+                    <ul>
+                        <li>org.eclipse.jetty.io.EofException - Response committed</li>
+                        <li>java.io.IOException - Broken pipe</li>
+                    </ul>
                 </section>
 
                 <section>
                     <h1>EofException: SetContentLength</h1>
+<pre style="width:auto;"><code data-trim class="java">
+    public interface HttpServletResponse {
+        
+        public void setContentLength(int len);
+        public void setContentLengthLong(long len);
+        
+        // name = "Content-Length"
+        public void addHeader(String name, String value);
+        public void setIntHeader(String name, int value);
+    }
+</code></pre>                                    
                 </section>
                 
                 <section>
                     <h1>IOException: broken channel</h1>
+<pre style="width:auto;"><code data-trim class="java">
+public void service(HttpServletRequest req, HttpServletResponse resp) {
+    // if everything is ok
+    final AsyncContext context = request.startAsync();
+    executor.submit(()->{
+        try{
+            doSomeWorkAndGenerateException(); 
+        }
+        catch(Throwable tr) {
+            // send request back
+            context.dispatch();
+            return;
+        }
+        // in case everything is ok
+        context.complete();
+    });
+}
+</code></pre>                                    
                 </section>
 
                 <section>
-                    <h1>Correct async request flow</h1>
+                    <h1>Async request flow</h1>
+<pre style="width:auto;"><code data-trim class="java">
+// avoid setContentLength()
+// start
+AsyncContext context = request.startAsync();
+
+try{
+    // avoid setContentLength()
+    doWork();
+}
+catch(Throwable e) {
+    // store e in the request attribute
+    context.dispatch();
+}
+finally {
+    if(!forward){
+        // no flush - no data
+        response.flush();
+        // cleanup
+        context.complete();
+    }
+}
+</code></pre>                                    
                 </section>
 
                 <section>
-                    <h1>Async Recap</h1>
+                    <h1>Spring MVC Async</h1>
+                    <img src="img/SpringMVCAsyncFlow.png"/>
                 </section>
 
                 <section>
-                    <h1>Moving forward</h1>
-                    <p>управление пулом. контроль очереди. управление числом потоков в пуле</p>
-                    <p>разный приоритет запросов</p>
-                    <p>разные ограничение для категорий запросов</p>
+                    <h1>Everybody lies</h1>
+                    <ul>
+                        <li>Specs: undetermined behavior</li>
+                        <li>Servers: every server has its own issues</li>
+                        <li>Developers: set content length</li>                        
+                    </ul>
+                </section>
+
+                <section>
+                        <h1>What is async really for?</h1>
+                        <ul>
+                            <li>Gain throughput</li>
+                            <li>Gain resource utilization</li>
+                        </ul>
+                    </section>
+    
+                    <section>
+                        <h1>What is async really for?</h1>
+                        <ul>
+                            <li>Resiliency</li>
+                        </ul>
+                    </section>
+
+                <section>
+                    <h1>Resiliency</h1>
+                    <img src="img/Resiliency.png"/>
                 </section>
                 
-                <section>
-                    <h1>Executor with backpressure</h1>
-                </section>
-
-                <section>
-                    <h1>A bit of resiliency</h1>
-                </section>
-
-                <section>
-                    <h1>Queues for requests</h1>
-                </section>
-
-                <section>
-                    <h1>Capacity planning</h1>
-                    <p>Queue theory in action</p>
-                </section>
-
-                <section>
-                    <h1>Backdoor to sync</h1>
-                </section>
-
-                <section>
-                    <h1>What is async really for?</h1>
-                    <ul>
-                        <li>Gain throughput</li>
-                        <li>Gain resource utilization</li>
-                    </ul>
-                </section>
-
-                <section>
-                    <h1>What is async really for?</h1>
-                    <ul>
-                        <li>Resiliency</li>
-                        <li>Capacity planning</li>
-                    </ul>
-                </section>
-
-                <section>
-                    <h1>At what cost?</h1>
-                    <ul>
-                        <li>Servlet spec refer to undetermined behavior</li>
-                        <li>Every servlet container has specific issues about async</li>
-                    </ul>
-                </section>
 
             </div>
         </div>
